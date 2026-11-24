@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Activity, FileText, Globe, Users, DollarSign, Download, Settings2,
   Save, Trash2, Plus, ShieldAlert, Ban, CheckCircle2, CreditCard,
+  ArrowLeft, ArrowRight,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -592,6 +593,19 @@ function PricingTab() {
     onError: (e) => toast.error((e as Error).message),
   });
 
+  // Меняет местами sort_order двух соседних карточек (порядок слева направо
+  // на сайте — это ровно sort_order по возрастанию), без удаления/создания.
+  const swapOrder = useMutation({
+    mutationFn: async ({ a, b }: { a: { id: string; sort_order: number }; b: { id: string; sort_order: number } }) => {
+      const { error: e1 } = await supabase.from("pricing_tiers").update({ sort_order: b.sort_order }).eq("id", a.id);
+      if (e1) throw e1;
+      const { error: e2 } = await supabase.from("pricing_tiers").update({ sort_order: a.sort_order }).eq("id", b.id);
+      if (e2) throw e2;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pricing_admin"] }); qc.invalidateQueries({ queryKey: ["pricing_tiers"] }); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
   const existingSlugs = new Set(tiers.map((t) => t.slug));
   const missing = SELLABLE_SLUGS.filter((s) => !existingSlugs.has(s));
 
@@ -613,13 +627,15 @@ function PricingTab() {
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {tiers.map((t) => (
+        {tiers.map((t, i) => (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <TierEditor
             key={t.id}
             tier={t as any}
             onSave={(patch) => update.mutate({ id: t.id, patch })}
             onDelete={() => remove.mutate(t.id)}
+            onMoveLeft={i > 0 ? () => swapOrder.mutate({ a: t, b: tiers[i - 1] }) : undefined}
+            onMoveRight={i < tiers.length - 1 ? () => swapOrder.mutate({ a: t, b: tiers[i + 1] }) : undefined}
           />
         ))}
       </div>
@@ -629,10 +645,15 @@ function PricingTab() {
 
 type Tier = {
   id: string; slug: string; title: string; price: number;
-  duration: string; workstation_limit: number; features: string[];
+  duration: string; workstation_limit: number; features: string[]; sort_order: number;
 };
 
-function TierEditor({ tier, onSave, onDelete }: { tier: Tier; onSave: (p: Partial<Tier>) => void; onDelete: () => void }) {
+function TierEditor({
+  tier, onSave, onDelete, onMoveLeft, onMoveRight,
+}: {
+  tier: Tier; onSave: (p: Partial<Tier>) => void; onDelete: () => void;
+  onMoveLeft?: () => void; onMoveRight?: () => void;
+}) {
   const [state, setState] = useState<Tier>(tier);
   useEffect(() => setState(tier), [tier]);
   const setField = <K extends keyof Tier>(k: K, v: Tier[K]) => setState({ ...state, [k]: v });
@@ -640,7 +661,15 @@ function TierEditor({ tier, onSave, onDelete }: { tier: Tier; onSave: (p: Partia
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-center justify-between">
-        <div className="text-xs uppercase tracking-widest text-primary">{state.slug}</div>
+        <div className="flex items-center gap-1">
+          <Button size="icon" variant="ghost" onClick={onMoveLeft} disabled={!onMoveLeft} title="Сдвинуть влево">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="text-xs uppercase tracking-widest text-primary">{state.slug}</div>
+          <Button size="icon" variant="ghost" onClick={onMoveRight} disabled={!onMoveRight} title="Сдвинуть вправо">
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
         <Button size="icon" variant="ghost" onClick={onDelete} title="Удалить тариф с сайта">
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
