@@ -490,8 +490,10 @@ function UsersTab() {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="trial">Free edition</SelectItem>
+              <SelectItem value="base">Base edition</SelectItem>
               <SelectItem value="pro">Pro edition</SelectItem>
-              <SelectItem value="cloud">Premium edition</SelectItem>
+              <SelectItem value="premium">Premium edition</SelectItem>
+              <SelectItem value="cloud">Cloud edition</SelectItem>
             </SelectContent>
           </Select>
           <Input
@@ -542,6 +544,11 @@ function UsersTab() {
 
 /* ----------------------------------------------------- PRICING */
 
+// Редакции, которые продаются на сайте (витрина pricing_tiers). 'trial'
+// сюда не входит — Free выдаётся по умолчанию при регистрации, отдельной
+// карточкой на сайте не продаётся.
+const SELLABLE_SLUGS = ["base", "pro", "premium", "cloud"] as const;
+
 function PricingTab() {
   const qc = useQueryClient();
   const { data: tiers = [] } = useQuery({
@@ -556,14 +563,66 @@ function PricingTab() {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["pricing_admin"] }); qc.invalidateQueries({ queryKey: ["pricing_tiers"] }); toast.success("Tier updated"); },
+    onError: (e) => toast.error((e as Error).message),
   });
 
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("pricing_tiers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pricing_admin"] }); qc.invalidateQueries({ queryKey: ["pricing_tiers"] }); toast.success("Tier removed"); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const add = useMutation({
+    mutationFn: async (slug: string) => {
+      const { error } = await supabase.from("pricing_tiers").insert({
+        slug,
+        title: slug.charAt(0).toUpperCase() + slug.slice(1),
+        price: 0,
+        duration: "month",
+        workstation_limit: 2,
+        features: [],
+        sort_order: (tiers.at(-1)?.sort_order ?? 0) + 1,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pricing_admin"] }); qc.invalidateQueries({ queryKey: ["pricing_tiers"] }); toast.success("Tier created — don't forget to fill in price/features"); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const existingSlugs = new Set(tiers.map((t) => t.slug));
+  const missing = SELLABLE_SLUGS.filter((s) => !existingSlugs.has(s));
+
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {tiers.map((t) => (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        <TierEditor key={t.id} tier={t as any} onSave={(patch) => update.mutate({ id: t.id, patch })} />
-      ))}
+    <div className="space-y-4">
+      {missing.length > 0 && (
+        <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+          <div className="text-sm font-medium">На сайте не хватает тарифа(ов): {missing.join(", ")}</div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Создайте карточку — она появится на странице цен сразу (с ценой $0, заполните после).
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {missing.map((slug) => (
+              <Button key={slug} size="sm" variant="outline" onClick={() => add.mutate(slug)} disabled={add.isPending}>
+                <Plus className="mr-1 h-3.5 w-3.5" />Add "{slug}"
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {tiers.map((t) => (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          <TierEditor
+            key={t.id}
+            tier={t as any}
+            onSave={(patch) => update.mutate({ id: t.id, patch })}
+            onDelete={() => remove.mutate(t.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -573,14 +632,19 @@ type Tier = {
   duration: string; workstation_limit: number; features: string[];
 };
 
-function TierEditor({ tier, onSave }: { tier: Tier; onSave: (p: Partial<Tier>) => void }) {
+function TierEditor({ tier, onSave, onDelete }: { tier: Tier; onSave: (p: Partial<Tier>) => void; onDelete: () => void }) {
   const [state, setState] = useState<Tier>(tier);
   useEffect(() => setState(tier), [tier]);
   const setField = <K extends keyof Tier>(k: K, v: Tier[K]) => setState({ ...state, [k]: v });
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
-      <div className="text-xs uppercase tracking-widest text-primary">{state.slug}</div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-widest text-primary">{state.slug}</div>
+        <Button size="icon" variant="ghost" onClick={onDelete} title="Удалить тариф с сайта">
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      </div>
       <div className="mt-3 space-y-3 text-sm">
         <div>
           <Label>Title</Label>
@@ -638,7 +702,8 @@ function FilesTab() {
 
   const [form, setForm] = useState({
     title: "", resolve_version: "all", build_version: "2027.1.0",
-    file_type: "Standalone Windows App", url: "", release_notes: "", tier_required: "trial" as "trial" | "pro" | "cloud",
+    file_type: "Standalone Windows App", url: "", release_notes: "",
+    tier_required: "trial" as "trial" | "base" | "pro" | "premium" | "cloud",
   });
 
   const add = useMutation({
@@ -696,11 +761,13 @@ function FilesTab() {
           </div>
           <div>
             <Label>Required tier</Label>
-            <Select value={form.tier_required} onValueChange={(v) => setForm({ ...form, tier_required: v as "trial" | "pro" | "cloud" })}>
+            <Select value={form.tier_required} onValueChange={(v) => setForm({ ...form, tier_required: v as "trial" | "base" | "pro" | "premium" | "cloud" })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="trial">Trial+</SelectItem>
+                <SelectItem value="trial">Trial+ (все)</SelectItem>
+                <SelectItem value="base">Base+</SelectItem>
                 <SelectItem value="pro">Pro+</SelectItem>
+                <SelectItem value="premium">Premium+</SelectItem>
                 <SelectItem value="cloud">Cloud only</SelectItem>
               </SelectContent>
             </Select>

@@ -248,7 +248,7 @@ function LandingPage() {
             <h2 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">{t("pricing.title")}</h2>
             <p className="mt-3 text-muted-foreground">{t("pricing.subtitle")}</p>
           </div>
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
             {tiers.map((tier) => {
               const highlight = tier.slug === "pro";
               return (

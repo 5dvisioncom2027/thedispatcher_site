@@ -13,7 +13,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-const TIER_ORDER: Record<string, number> = { trial: 1, pro: 2, cloud: 3 };
+const TIER_ORDER: Record<string, number> = { trial: 1, base: 2, pro: 3, premium: 4, cloud: 5 };
 
 function Dashboard() {
   const { t } = useI18n();
@@ -39,6 +39,17 @@ function Dashboard() {
       return (data ?? []).filter((f: { tier_required: string }) => (TIER_ORDER[f.tier_required] ?? 1) <= userLevel);
     },
   });
+
+  // Лимит рабочих станций берём из pricing_tiers (admin-редактируемая цифра
+  // для каждого тарифа), а не из жёстко зашитого числа — раньше здесь было
+  // только 2 деления (trial/остальные), что перестало иметь смысл с 5
+  // уровнями редакции.
+  const { data: tierLimits = [] } = useQuery({
+    queryKey: ["pricing_tiers_limits"],
+    queryFn: async () => (await supabase.from("pricing_tiers").select("slug,workstation_limit")).data ?? [],
+  });
+  const workstationLimit =
+    tierLimits.find((t) => t.slug === (profile?.license_tier ?? "trial"))?.workstation_limit ?? 2;
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -95,7 +106,7 @@ function Dashboard() {
           <div className="rounded-xl border border-border bg-card p-5">
             <div className="text-xs uppercase tracking-widest text-muted-foreground">Cluster limit</div>
             <div className="mt-3 font-display text-4xl font-semibold text-primary">
-              {profile?.license_tier === "trial" ? 2 : 10}
+              {workstationLimit}
             </div>
             <div className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">Windows workstations</div>
           </div>

@@ -54,7 +54,7 @@ export function SiteHeader() {
           <a href="/#features" className="transition hover:text-foreground">{t("nav.features")}</a>
           <a href="/#pricing" className="transition hover:text-foreground">{t("nav.pricing")}</a>
           <a href="/#architecture" className="transition hover:text-foreground">{t("nav.architecture")}</a>
-          <a href="/#cloud" className="transition hover:text-foreground">{t("nav.cloud")}</a>
+          <a href="https://dispatcher-cloud-console.vercel.app" target="_blank" rel="noopener noreferrer" className="transition hover:text-foreground">{t("nav.cloud")}</a>
         </nav>
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
