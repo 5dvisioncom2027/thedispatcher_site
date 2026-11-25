@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Activity, FileText, Globe, Users, DollarSign, Download, Settings2,
   Save, Trash2, Plus, ShieldAlert, Ban, CheckCircle2, CreditCard,
-  ArrowLeft, ArrowRight,
+  ArrowLeft, ArrowRight, UserPlus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -77,6 +77,7 @@ function AdminPage() {
             <TabsTrigger value="cms"><FileText className="mr-1.5 h-4 w-4" />CMS</TabsTrigger>
             <TabsTrigger value="i18n"><Globe className="mr-1.5 h-4 w-4" />Translations</TabsTrigger>
             <TabsTrigger value="users"><Users className="mr-1.5 h-4 w-4" />Users</TabsTrigger>
+            <TabsTrigger value="trial"><UserPlus className="mr-1.5 h-4 w-4" />Start free trial</TabsTrigger>
             <TabsTrigger value="pricing"><DollarSign className="mr-1.5 h-4 w-4" />Pricing</TabsTrigger>
             <TabsTrigger value="files"><Download className="mr-1.5 h-4 w-4" />Files</TabsTrigger>
             <TabsTrigger value="wallets"><CreditCard className="mr-1.5 h-4 w-4" />Wallets</TabsTrigger>
@@ -87,6 +88,7 @@ function AdminPage() {
           <TabsContent value="cms" className="mt-6"><CMSTab /></TabsContent>
           <TabsContent value="i18n" className="mt-6"><TranslationsTab /></TabsContent>
           <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>
+          <TabsContent value="trial" className="mt-6"><TrialSignupsTab /></TabsContent>
           <TabsContent value="pricing" className="mt-6"><PricingTab /></TabsContent>
           <TabsContent value="files" className="mt-6"><FilesTab /></TabsContent>
           <TabsContent value="wallets" className="mt-6"><WalletsTab /></TabsContent>
@@ -544,6 +546,110 @@ function UsersTab() {
 }
 
 /* ----------------------------------------------------- PRICING */
+
+// Список регистраций через форму "Start Free Trial" на странице цен
+// (index.tsx → TrialSignupDialog) — те же пользователи, что и в Users
+// (одна и та же таблица profiles), но отфильтрованы по наличию строки в
+// trial_signups и с доп.полями формы (страна/индустрия/источник). Контроль
+// лицензии — тот же Select/дата истечения/бан, что и в UsersTab, намеренно
+// продублирован (не вынесен в общий хук), чтобы вкладки оставались
+// независимыми друг от друга.
+function TrialSignupsTab() {
+  const qc = useQueryClient();
+  const { data: profiles = [] } = useQuery({
+    queryKey: ["all_profiles"],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+  const { data: signups = [] } = useQuery({
+    queryKey: ["trial_signups"],
+    queryFn: async () => (await supabase.from("trial_signups").select("*").order("created_at", { ascending: false })).data ?? [],
+  });
+
+  const update = useMutation({
+    mutationFn: async (row: { id: string; patch: Record<string, unknown>; action: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.from("profiles").update(row.patch as any).eq("id", row.id);
+      if (error) throw error;
+      const { data: u } = await supabase.auth.getUser();
+      if (u.user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await supabase.from("audit_logs").insert({
+          actor_id: u.user.id, action: row.action, target: row.id, meta: row.patch as any,
+        });
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["all_profiles"] }); toast.success("User updated"); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  // trial_signups.id ссылается на auth.users(id), не на profiles напрямую,
+  // поэтому PostgREST не умеет сделать это embed-запросом ("*, profiles(*)")
+  // — объединяем на клиенте, как и payFor()/orphanPayments в UsersTab выше.
+  const rows = signups
+    .map((s) => ({ signup: s, profile: profiles.find((p) => p.id === s.id) }))
+    .filter((r): r is { signup: (typeof signups)[number]; profile: (typeof profiles)[number] } => !!r.profile);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr_1fr_0.9fr_auto] items-center gap-3 border-b border-border bg-muted/30 px-4 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+        <div>User</div><div>Country / Industry / Source</div><div>Tier</div><div>Expiry</div><div>Status</div><div /><div />
+      </div>
+      {rows.map(({ signup: s, profile: u }) => (
+        <div key={u.id} className="grid grid-cols-[1.3fr_1fr_1fr_1fr_1fr_0.9fr_auto] items-center gap-3 border-b border-border/60 px-4 py-3 text-sm">
+          <div>
+            <div className="font-medium">{s.username || u.full_name || u.email}</div>
+            <div className="text-xs text-muted-foreground">{u.email}</div>
+            <div className="font-mono text-[10px] text-muted-foreground">{u.id.slice(0, 8)}</div>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            <div>{s.country}</div>
+            <div>{s.industry}</div>
+            <div>{s.source}</div>
+          </div>
+          <Select
+            value={u.license_tier}
+            onValueChange={(v) => update.mutate({ id: u.id, patch: { license_tier: v }, action: "change_tier" })}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="trial">Free edition</SelectItem>
+              <SelectItem value="base">Base edition</SelectItem>
+              <SelectItem value="pro">Pro edition</SelectItem>
+              <SelectItem value="premium">Premium edition</SelectItem>
+              <SelectItem value="cloud">Cloud edition</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="date"
+            defaultValue={u.license_expires_at ? new Date(u.license_expires_at).toISOString().slice(0, 10) : ""}
+            onBlur={(e) => update.mutate({ id: u.id, patch: { license_expires_at: e.target.value || null }, action: "change_expiry" })}
+          />
+          <div>
+            {u.is_banned ? (
+              <Badge variant="destructive">Suspended</Badge>
+            ) : (
+              <Badge className="bg-primary/20 text-primary">Active</Badge>
+            )}
+          </div>
+          <div />
+          <Button
+            size="sm"
+            variant={u.is_banned ? "outline" : "destructive"}
+            onClick={() => update.mutate({ id: u.id, patch: { is_banned: !u.is_banned }, action: u.is_banned ? "unban" : "ban" })}
+          >
+            {u.is_banned ? <><CheckCircle2 className="mr-1 h-3.5 w-3.5" />Unban</> : <><Ban className="mr-1 h-3.5 w-3.5" />Ban</>}
+          </Button>
+        </div>
+      ))}
+      {rows.length === 0 && (
+        <div className="p-6 text-center text-sm text-muted-foreground">Пока никто не регистрировался через форму "Start Free Trial".</div>
+      )}
+    </div>
+  );
+}
 
 // Карточки, которые показываются на витрине pricing_tiers. 'trial' сюда не
 // входит — Free выдаётся по умолчанию при регистрации, отдельной карточкой

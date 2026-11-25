@@ -13,6 +13,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { NodeCanvas } from "@/components/NodeCanvas";
 import { HeroVideo } from "@/components/HeroVideo";
 import { PaymentDialog, type PayTier } from "@/components/PaymentDialog";
+import { TrialSignupDialog } from "@/components/TrialSignupDialog";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -29,6 +30,7 @@ type Content = { key: string; value: string };
 function LandingPage() {
   const { t, lang } = useI18n();
   const [payTier, setPayTier] = useState<PayTier | null>(null);
+  const [trialTier, setTrialTier] = useState<Tier | null>(null);
 
   const { data: tiers = [] } = useQuery({
     queryKey: ["pricing_tiers"],
@@ -303,13 +305,22 @@ function LandingPage() {
                       </Button>
                     </Link>
                   ) : (
-                    <Button
-                      className="mt-6 w-full"
-                      variant={highlight ? "default" : "outline"}
-                      onClick={() => setPayTier({ slug: tier.slug, title: tier.title, price: Number(tier.price) })}
-                    >
-                      {t("pricing.cta.buy")}
-                    </Button>
+                    <div className="mt-6 space-y-2">
+                      <Button
+                        className="w-full"
+                        variant={highlight ? "default" : "outline"}
+                        onClick={() => setPayTier({ slug: tier.slug, title: tier.title, price: Number(tier.price) })}
+                      >
+                        {t("pricing.cta.buy")}
+                      </Button>
+                      <Button
+                        className="w-full"
+                        variant={highlight ? "default" : "outline"}
+                        onClick={() => setTrialTier(tier)}
+                      >
+                        {t("pricing.cta.trial")}
+                      </Button>
+                    </div>
                   )}
                 </div>
               );
@@ -319,6 +330,7 @@ function LandingPage() {
       </section>
 
       <PaymentDialog open={!!payTier} onOpenChange={(v) => !v && setPayTier(null)} tier={payTier} />
+      <TrialSignupDialog open={!!trialTier} onOpenChange={(v) => !v && setTrialTier(null)} tierTitle={trialTier?.title} />
 
       <SiteFooter />
     </div>

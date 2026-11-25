@@ -160,6 +160,33 @@ export type Database = {
         }
         Relationships: []
       }
+      trial_signups: {
+        Row: {
+          country: string
+          created_at: string
+          id: string
+          industry: string
+          source: string
+          username: string
+        }
+        Insert: {
+          country: string
+          created_at?: string
+          id: string
+          industry: string
+          source: string
+          username: string
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          id?: string
+          industry?: string
+          source?: string
+          username?: string
+        }
+        Relationships: []
+      }
       pricing_tiers: {
         Row: {
           duration: string
