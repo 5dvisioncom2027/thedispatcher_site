@@ -243,7 +243,7 @@ function LandingPage() {
 
       {/* PRICING */}
       <section id="pricing" className="relative border-t border-border bg-card/30">
-        <div className="mx-auto max-w-7xl px-6 py-20">
+        <div className="mx-auto max-w-[1800px] px-6 py-20">
           <div className="max-w-2xl">
             <h2 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">{t("pricing.title")}</h2>
             <p className="mt-3 text-muted-foreground">{t("pricing.subtitle")}</p>
