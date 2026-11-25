@@ -545,10 +545,18 @@ function UsersTab() {
 
 /* ----------------------------------------------------- PRICING */
 
-// Редакции, которые продаются на сайте (витрина pricing_tiers). 'trial'
-// сюда не входит — Free выдаётся по умолчанию при регистрации, отдельной
-// карточкой на сайте не продаётся.
-const SELLABLE_SLUGS = ["base", "pro", "premium", "cloud"] as const;
+// Карточки, которые показываются на витрине pricing_tiers. 'trial' сюда не
+// входит — Free выдаётся по умолчанию при регистрации, отдельной карточкой
+// на сайте не продаётся. 'enterprise' — не настоящая редакция лицензии (её
+// нет в enum license_tier), а отдельная карточка-визитка "по запросу": без
+// цены и без самостоятельного оформления заказа, только кнопка "Связаться"
+// (см. CONTACT_ONLY_PRICE и index.tsx).
+const SELLABLE_SLUGS = ["base", "pro", "premium", "cloud", "enterprise"] as const;
+
+// Цена-метка для карточек "по запросу" (Enterprise и подобные) — реальной
+// отрицательной цены не бывает, так что это безопасный признак "без
+// самостоятельной оплаты", не требующий отдельной колонки в БД.
+const CONTACT_ONLY_PRICE = -1;
 
 function PricingTab() {
   const qc = useQueryClient();
@@ -578,12 +586,13 @@ function PricingTab() {
 
   const add = useMutation({
     mutationFn: async (slug: string) => {
+      const isEnterprise = slug === "enterprise";
       const { error } = await supabase.from("pricing_tiers").insert({
         slug,
-        title: slug.charAt(0).toUpperCase() + slug.slice(1),
-        price: 0,
-        duration: "month",
-        workstation_limit: 2,
+        title: isEnterprise ? "Enterprise Cloud" : slug.charAt(0).toUpperCase() + slug.slice(1),
+        price: isEnterprise ? CONTACT_ONLY_PRICE : 0,
+        duration: isEnterprise ? "" : "month",
+        workstation_limit: isEnterprise ? 0 : 2,
         features: [],
         sort_order: (tiers.at(-1)?.sort_order ?? 0) + 1,
       });
@@ -657,6 +666,7 @@ function TierEditor({
   const [state, setState] = useState<Tier>(tier);
   useEffect(() => setState(tier), [tier]);
   const setField = <K extends keyof Tier>(k: K, v: Tier[K]) => setState({ ...state, [k]: v });
+  const contactOnly = state.price === CONTACT_ONLY_PRICE;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
@@ -679,10 +689,25 @@ function TierEditor({
           <Label>Title</Label>
           <Input value={state.title} onChange={(e) => setField("title", e.target.value)} className="mt-1" />
         </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={contactOnly}
+            onChange={(e) => setField("price", e.target.checked ? CONTACT_ONLY_PRICE : 0)}
+          />
+          Без цены — кнопка "{"Связаться"}" вместо покупки (для Enterprise и подобных)
+        </label>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label>Price ($)</Label>
-            <Input type="number" value={state.price} onChange={(e) => setField("price", Number(e.target.value))} className="mt-1" />
+            <Input
+              type="number"
+              value={contactOnly ? "" : state.price}
+              disabled={contactOnly}
+              placeholder={contactOnly ? "По запросу" : undefined}
+              onChange={(e) => setField("price", Number(e.target.value))}
+              className="mt-1"
+            />
           </div>
           <div>
             <Label>Workstations</Label>
@@ -691,7 +716,7 @@ function TierEditor({
         </div>
         <div>
           <Label>Duration</Label>
-          <Input value={state.duration} onChange={(e) => setField("duration", e.target.value)} className="mt-1" />
+          <Input value={state.duration} onChange={(e) => setField("duration", e.target.value)} className="mt-1" placeholder={contactOnly ? "можно оставить пустым" : undefined} />
         </div>
         <div>
           <Label>Features (one per line)</Label>

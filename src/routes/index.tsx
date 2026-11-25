@@ -248,9 +248,13 @@ function LandingPage() {
             <h2 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">{t("pricing.title")}</h2>
             <p className="mt-3 text-muted-foreground">{t("pricing.subtitle")}</p>
           </div>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {tiers.map((tier) => {
-              const highlight = tier.slug === "pro";
+              const highlight = tier.slug === "premium";
+              // Карточки "по запросу" (Enterprise и подобные) помечены ценой
+              // -1 в админке (Pricing tab) — без самостоятельной оплаты,
+              // только кнопка "Связаться".
+              const contactOnly = Number(tier.price) < 0;
               return (
                 <div
                   key={tier.id}
@@ -264,12 +268,20 @@ function LandingPage() {
                   <div className="text-xs uppercase tracking-widest text-primary">{tier.slug}</div>
                   <h3 className="mt-2 font-display text-xl font-semibold">{tier.title}</h3>
                   <div className="mt-4 flex items-baseline gap-1">
-                    <span className="font-display text-4xl font-semibold">${Number(tier.price)}</span>
-                    <span className="text-xs text-muted-foreground">/ {tier.duration}</span>
+                    {contactOnly ? (
+                      <span className="font-display text-4xl font-semibold">{t("pricing.custom")}</span>
+                    ) : (
+                      <>
+                        <span className="font-display text-4xl font-semibold">${Number(tier.price)}</span>
+                        <span className="text-xs text-muted-foreground">/ {tier.duration}</span>
+                      </>
+                    )}
                   </div>
-                  <div className="mt-2 text-xs uppercase tracking-wider text-muted-foreground">
-                    {t("pricing.upto")} {tier.workstation_limit} {t("pricing.workstations")}
-                  </div>
+                  {!contactOnly && (
+                    <div className="mt-2 text-xs uppercase tracking-wider text-muted-foreground">
+                      {t("pricing.upto")} {tier.workstation_limit} {t("pricing.workstations")}
+                    </div>
+                  )}
                   <ul className="mt-5 flex-1 space-y-2 text-sm">
                     {(tier.features ?? []).map((f) => (
                       <li key={f} className="flex items-start gap-2">
@@ -278,7 +290,13 @@ function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  {tier.slug === "trial" ? (
+                  {contactOnly ? (
+                    <a href="mailto:sales@thedispatcher.com" className="mt-6">
+                      <Button className="w-full" variant={highlight ? "default" : "outline"}>
+                        {t("pricing.cta.contact")}
+                      </Button>
+                    </a>
+                  ) : tier.slug === "trial" ? (
                     <Link to="/auth" className="mt-6">
                       <Button className="w-full" variant={highlight ? "default" : "outline"}>
                         {t("pricing.cta.trial")}
